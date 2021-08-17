@@ -1,0 +1,210 @@
+tenantId=""
+subscriptionId=""
+
+az login --tenant $tenantId
+
+brew tap hashicorp/tap
+brew upgrade hashicorp/tap/terraform
+terraform version
+terraform -help
+terraform -help plan
+clusterName=terr-aks-cluster
+terraform init
+terraform plan -out out.plan
+terraform apply out.plan
+terraform plan -destroy -out out.destroy.plan
+terraform apply out.destroy.plan
+
+Quick Tests
+=================================================================================================
+// Remove existing state
+terraform state rm module.resourceGroup.azurerm_resource_group.rg
+
+// Network
+terraform import module.resourceGroup.azurerm_resource_group.rg "/subscriptions/$subscriptionId/resourceGroups/terraform-workshop-rg"
+
+// Storage
+terraform import module.network.module.resourceGroup.azurerm_resource_group.rg "/subscriptions/$subscriptionId/resourceGroups/terraform-workshop-rg"
+terraform import module.network.azurerm_subnet.acr_subnet "/subscriptions/$subscriptionId/resourceGroups/terraform-workshop-rg/providers/Microsoft.Network/virtualNetworks/terraform-workshop-vnet/subnets/acr_subnet"
+terraform import module.network.azurerm_subnet.kv_subnet "/subscriptions/$subscriptionId/resourceGroups/terraform-workshop-rg/providers/Microsoft.Network/virtualNetworks/terraform-workshop-vnet/subnets/kv_subnet"
+terraform import module.network.azurerm_subnet.storage_subnet "/subscriptions/$subscriptionId/resourceGroups/terraform-workshop-rg/providers/Microsoft.Network/virtualNetworks/terraform-workshop-vnet/subnets/storage_subnet"
+terraform import module.network.azurerm_virtual_network.vnet "/subscriptions/$subscriptionId/resourceGroups/terraform-workshop-rg/providers/Microsoft.Network/virtualNetworks/terraform-workshop-vnet"
+
+================================================================================================================
+
+Resource Group
+===============
+
+terraform plan -out out.plan
+terraform apply out.plan
+
+Network
+========
+
+terraform plan -out out.plan --var 'resource_group_name=terraform-workshop-rg' \
+--var 'resource_group_location=eastus'
+terraform apply out.plan
+
+terraform plan -destroy -out out.destroy.plan --var 'resource_group_name=terraform-workshop-rg' \
+--var 'resource_group_location=eastus'
+terraform apply out.destroy.plan
+
+
+========================================================================
+
+AKS
+====
+tenantId=""
+subscriptionId=""
+objectId=""
+resourceGroup=terraform-workshop-rg
+masterResourceGroup=master-workshop-rg
+lwResourceGroup=monitoring-workshop-rg
+location=eastus
+masterVnetName=master-workshop-vnet
+vnetName=terraform-workshop-vnet
+vnetAddressPrefixes='["25.0.0.0/16"]'
+subnetNames='["aks_subnet", "ingress_subnet", "appgw_subnet"]'
+subnetAddressPrefixes='["25.0.0.0/24", "25.0.1.0/24", "25.0.2.0/24"]'
+acrName=terrwkacr
+acrSku=Premium
+kvName=terr-wkshp-kv
+kvSku=premium
+logWorkspaceName=terr-wkshp-log
+spId="cc5393ca-6efa-410f-a0fc-6ac0bf236c65"
+spPassword="JBrNjObRqH02._.TnI73GCpdbJiIyGCInk"
+aadAdminGroupIds='[""]'
+aadTenantID=""
+appgwName="terr-appgw"
+backendPoolNames='["pool1"]'
+backendIPAddresses='["25.0.2.0"]'
+sslcertName="ssl-cert"
+sslcertSecretName="ssl-cert-secret"
+sslcertPasswordName="ssl-cert-pwd"
+trustedRootCertName="root-cert"
+trustedRootCertSecretName="root-cert-secret"clusterName
+httpsListenerNames='["httpslst1", "httpslst2"]'
+httpsSettingNames='["https1", "https2"]'
+listenerHostNames='["host1.test.com", "host2.test.com"]'
+backendHostNames='["host1.internal.com", "host2.internal.com"]'
+httpsRuleNames='["rule1", "rule2"]'
+probeName="appgw-https-probe"
+
+
+az ad sp create-for-rbac --skip-assignment -n http://$clusterName-sp
+{
+  "appId": "",
+  "displayName": "http://aks-k8s-cluster-sp",
+  "name": "",
+  "password": "",
+  "tenant": ""
+}
+
+az group create -n $resourceGroup -l $location
+pvtDNSZoneId=$(az network private-dns zone show -n privatelink.eastus.azmk8s.io -g master-workshop-rg --query="id" -o tsv)
+
+az monitor log-analytics workspace create -g $lwResourceGroup -n $logWorkspaceName
+logWorkspaceId=$(az monitor log-analytics workspace show -g $lwResourceGroup -n $logWorkspaceName --query "id" -o tsv)
+
+terraform init
+terraform init --reconfigure (if change on state)
+
+PreConfig
+=========
+terraform plan -out out.plan --var "resource_group_name=$resourceGroup" --var "resource_group_location=$location" \
+--var "master_vnet_name=$masterVnetName" \
+--var "vnet_name=$vnetName" --var "vnet_address_prefixes=$vnetAddressPrefixes" \
+--var "subnet_names=$subnetNames" \
+--var "subnet_address_prefixes=$subnetAddressPrefixes" \
+--var "acr_name=$acrName" --var "acr_sku=$acrSku" \
+--var "kv_name=$kvName" --var "kv_sku=$kvSku" --var "master_resource_group_name=$masterResourceGroup" \
+--var "tenant_id=$tenantId" --var "object_id=$objectId"
+
+terraform apply out.plan
+
+terraform plan -destroy -out out.destroy.plan --var "resource_group_name=$resourceGroup" --var "resource_group_location=$location" \
+--var "master_vnet_name=$masterVnetName" --var "master_vnet_name=$masterVnetName" \
+--var "vnet_name=$vnetName" --var "vnet_address_prefixes=$vnetAddressPrefixes" \
+--var "subnet_names=$subnetNames" \
+--var "subnet_address_prefixes=$subnetAddressPrefixes" \
+--var "acr_name=$acrName" --var "acr_sku=$acrSku" \
+--var "kv_name=$kvName" --var "kv_sku=$kvSku" --var "master_resource_group_name=$masterResourceGroup" \
+--var "tenant_id=$tenantId" --var "object_id=$objectId"
+
+terraform apply out.destroy.plan
+=================================
+
+Setup
+=====
+
+terraform plan -out out.plan --var "resource_group_name=$resourceGroup" --var "resource_group_location=$location" \
+--var "master_resource_group_name=$masterResourceGroup" \
+--var "log_analytics_workspace_name=$logWorkspaceName" \
+--var log_analytics_resource_group_name=$lwResourceGroup \
+--var "cluster_name=$clusterName" \
+--var client_id=$spId --var client_secret=$spPassword \
+--var "vnet_name=$vnetName" --var "subnet_name=aks_subnet" \
+--var "network_plugin=azure" --var "network_policy=azure" \
+--var "service_cidr=25.0.3.0/24" --var "dns_service_ip=25.0.3.10" \
+--var "vm_size=Standard_DS2_V2" --var "max_pods=10" \
+--var "min_count=2" --var "max_count=5" --var "type=VirtualMachineScaleSets" \
+--var "system_nodepool_name=syspool" --var "system_nodepool_count=2" \
+--var "admin_group_ids=$aadAdminGroupIds" --var admin_tenant_id=$aadTenantID
+
+terraform apply out.plan
+
+terraform plan -destroy -out out.destroy.plan --var "resource_group_name=$resourceGroup" --var "resource_group_location=$location" \
+--var "master_resource_group_name=$masterResourceGroup" \
+--var "log_analytics_workspace_name=$logWorkspaceName" \
+--var log_analytics_resource_group_name=$lwResourceGroup \
+--var "cluster_name=$clusterName" \
+--var client_id=$spId --var client_secret=$spPassword \
+--var "vnet_name=$vnetName" --var "subnet_name=aks_subnet" \
+--var "network_plugin=azure" --var "network_policy=azure" \
+--var "service_cidr=25.0.3.0/24" --var "dns_service_ip=25.0.3.10" \
+--var "vm_size=Standard_DS2_V2" --var "max_pods=10" \
+--var "min_count=2" --var "max_count=5" --var "type=VirtualMachineScaleSets" \
+--var "system_nodepool_name=syspool" --var "system_nodepool_count=2" \
+--var "admin_group_ids=$aadAdminGroupIds" --var admin_tenant_id=$aadTenantID
+
+terraform apply out.destroy.plan
+=================================
+
+AppGW
+=====
+
+terraform plan -out out.plan --var "resource_group_name=$resourceGroup" --var "resource_group_location=$location" \
+--var "appgw_name=$appgwName" \
+--var "vnet_name=$vnetName" --var "subnet_name=appgw_subnet" \
+--var "backend_pool_names=$backendPoolNames" --var "backend_ip_addresses=$backendIPAddresses" \
+--var "sslcert_name=$sslcertName" --var "sslcert_secret_name=$sslcertSecretName" \
+--var "sslcert_password_name=$sslcertPasswordName" \
+--var "trusted_root_cert_name=$trustedRootCertName" \
+--var "trusted_root_cert_secret_name=$trustedRootCertSecretName" \
+--var "keyvault_name=$kvName" --var "https_listener_names=$httpsListenerNames" \
+--var "https_setting_names=$httpsSettingNames" \
+--var "listener_host_names=$listenerHostNames" --var "backend_host_names=$backendHostNames" \
+--var "https_rule_names=$httpsRuleNames" --var "probe_name=$probeName"
+
+
+terraform apply out.plan
+
+terraform plan -destroy -out out.destroy.plan --var "resource_group_name=$resourceGroup" --var "resource_group_location=$location" \
+--var "appgw_name=$appgwName" \
+--var "vnet_name=$vnetName" --var "subnet_name=appgw_subnet" \
+--var "backend_pool_names=$backendPoolNames" --var "backend_ip_addresses=$backendIPAddresses" \
+--var "sslcert_name=$sslcertName" --var "sslcert_secret_name=$sslcertSecretName" \
+--var "sslcert_password_name=$sslcertPasswordName" \
+--var "trusted_root_cert_name=$trustedRootCertName" \
+--var "trusted_root_cert_secret_name=$trustedRootCertSecretName" \
+--var "keyvault_name=$kvName" --var "https_listener_names=$httpsListenerNames" \
+--var "https_setting_names=$httpsSettingNames" \
+--var "listener_host_names=$listenerHostNames" --var "backend_host_names=$backendHostNames" \
+--var "https_rule_names=$httpsRuleNames" --var "probe_name=$probeName"
+
+terraform apply out.destroy.plan
+=================================
+
+
+
+
